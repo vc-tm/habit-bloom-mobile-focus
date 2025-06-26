@@ -8,7 +8,7 @@ import BottomNavbar from '@/components/BottomNavbar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getYear, getMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getYear, getMonth, subMonths } from 'date-fns';
 
 interface Habit {
   id: string;
@@ -20,6 +20,7 @@ const ViewStats = () => {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [expandedHabits, setExpandedHabits] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -30,6 +31,9 @@ const ViewStats = () => {
     if (!user) return;
     
     try {
+      setError(null);
+      console.log('Fetching habits for user:', user.uid);
+      
       const habitsRef = collection(db, 'habits');
       const q = query(habitsRef, where('userId', '==', user.uid));
       const querySnapshot = await getDocs(q);
@@ -44,9 +48,11 @@ const ViewStats = () => {
         });
       });
       
+      console.log('Fetched habits:', habitsList.length);
       setHabits(habitsList);
     } catch (error) {
       console.error('Error fetching habits:', error);
+      setError('Failed to load habits. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -64,20 +70,20 @@ const ViewStats = () => {
     });
   };
 
-  const renderCalendar = (habit: Habit, isCurrentMonth: boolean = true) => {
+  const renderCalendar = (habit: Habit, monthsBack: number = 0) => {
     const today = new Date();
-    const currentMonth = isCurrentMonth ? today : new Date(today.getFullYear(), today.getMonth() - 12);
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
+    const targetMonth = monthsBack === 0 ? today : subMonths(today, monthsBack);
+    const monthStart = startOfMonth(targetMonth);
+    const monthEnd = endOfMonth(targetMonth);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
     
     const startPadding = monthStart.getDay();
     const paddingDays = Array.from({ length: startPadding }, (_, i) => null);
     
     return (
-      <div className="mt-4">
+      <div className="mt-4" key={`calendar-${habit.id}-${monthsBack}`}>
         <h4 className="font-medium mb-3 text-center">
-          {format(currentMonth, 'MMMM yyyy')}
+          {format(targetMonth, 'MMMM yyyy')}
         </h4>
         <div className="grid grid-cols-7 gap-1 text-center">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
@@ -124,6 +130,23 @@ const ViewStats = () => {
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 pb-20">
+        <TopNavbar title="Habit Statistics" />
+        <div className="p-4 flex items-center justify-center min-h-96">
+          <div className="text-center">
+            <div className="text-6xl mb-4">⚠️</div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">Error Loading Stats</h3>
+            <p className="text-gray-600 mb-4">{error}</p>
+            <Button onClick={fetchHabits}>Try Again</Button>
+          </div>
+        </div>
+        <BottomNavbar />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <TopNavbar title="Habit Statistics" />
@@ -163,19 +186,17 @@ const ViewStats = () => {
                     </Button>
                   </div>
                   
-                  {renderCalendar(habit, true)}
+                  {renderCalendar(habit, 0)}
                   
                   {isExpanded && (
                     <div className="mt-6 pt-4 border-t">
                       <h4 className="font-medium mb-4 text-center text-gray-700">
-                        All Time View
+                        Previous Months
                       </h4>
-                      <div className="max-h-96 overflow-y-auto">
-                        {Array.from({ length: 12 }, (_, i) => {
-                          const monthDate = new Date();
-                          monthDate.setMonth(monthDate.getMonth() - i);
-                          return renderCalendar(habit, false);
-                        })}
+                      <div className="max-h-96 overflow-y-auto space-y-4">
+                        {Array.from({ length: 6 }, (_, i) => 
+                          renderCalendar(habit, i + 1)
+                        )}
                       </div>
                     </div>
                   )}
